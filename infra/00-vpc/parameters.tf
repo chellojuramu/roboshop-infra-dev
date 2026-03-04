@@ -1,5 +1,6 @@
-  resource "aws_ssm_parameter" "vpc_id" {
-    name  = "/${var.project}/${var.environment}/vpc_id"
-    type  = "String"
-    value = module.vpc.vpc_id
-  }
+resource "aws_ssm_parameter" "parameters" {
+  for_each = local.ssm_parameters
+  name = "/${var.project}/${var.environment}/${each.key}"
+  type = each.value.type
+  value = each.value.value
+}

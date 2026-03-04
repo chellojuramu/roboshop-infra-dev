@@ -1,5 +1,6 @@
-resource "aws_ssm_parameter" "mongodb_sg_id" {
-  name  = "/${var.project}/${var.environment}/mongodb_sg_id"
+resource "aws_ssm_parameter" "sg_id" {
+  for_each = module.sg
+  name  = "/${var.project}/${var.environment}/${each.key}_sg_id"
   type  = "String"
-  value = module.sg.sg_id
+  value = each.value.sg_id
 }
