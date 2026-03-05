@@ -19,7 +19,8 @@ roboshop-infra-dev
 │   ├── 00-vpc
 │   ├── 10-sg
 │   ├── 20-sg-rules
-│   └── 30-bastion
+│   ├── 30-bastion
+│   └── 40-databases
 │
 ├── modules
 │   ├── terraform-aws-vpc
@@ -35,11 +36,12 @@ The infrastructure is created in **logical layers**, where each layer depends on
 ## 00-vpc
 
 Creates the foundational networking components:
-
-* VPC
-* Public Subnets
-* Private Subnets
-* Database Subnets
+- VPC
+- Public Subnets
+- Private Subnets
+- Database Subnets
+- Internet Gateway
+- NAT Gateway
 
 Key outputs such as **VPC ID and Subnet IDs** are stored in **AWS Systems Manager Parameter Store** for use by other modules.
 
@@ -78,6 +80,7 @@ Examples:
 * Bastion → MongoDB (SSH)
 * Catalogue → MongoDB
 * User → MongoDB
+* Bastion → Redis
 
 Security group rules enforce controlled communication between application services.
 
@@ -92,6 +95,33 @@ Features:
 * EC2 instance in public subnet
 * IAM role attached via instance profile
 * Security group restricting SSH access to a specific IP
+* Custom root volume configuration
+* Bootstrap script using provisioners
+* Secure entry point into private subnets
+* Infrastructure management from inside the VPC
+
+## 40-databases
+Creates the database infrastructure.
+
+Resources:
+
+- MongoDB EC2 instance
+- Redis EC2 instance
+
+Features:
+
+- Instances launched in database subnets
+- Security groups applied
+- Terraform `terraform_data` resource used for instance configuration
+- Provisioners used to bootstrap instances
+
+Configuration flow:
+
+1. Terraform creates EC2 instance
+2. `bootstrap.sh` script copied to instance
+3. Ansible installed
+4. Ansible playbooks executed to configure services
+
 
 This instance acts as a **secure entry point** for administrative access to private resources.
 
@@ -142,8 +172,34 @@ Infrastructure should be deployed **layer by layer** in the following order:
 2. 10-sg
 3. 20-sg-rules
 4. 30-bastion
+5. 40-databases
 ```
+## Execution Flow
 
+```
+Terraform Apply
+      │
+      ▼
+Create VPC
+      │
+      ▼
+Create Security Groups
+      │
+      ▼
+Apply Security Group Rules
+      │
+      ▼
+Create Bastion Host
+      │
+      ▼
+Create Database Instances
+      │
+      ▼
+Bootstrap Configuration
+      │
+      ▼
+Install Services (MongoDB / Redis)
+```
 Typical Terraform workflow:
 
 ```
@@ -158,7 +214,18 @@ If modules change:
 terraform init -upgrade
 ```
 
+## Key DevOps Concepts Implemented
+
+- Infrastructure as Code (IaC)
+- Modular Terraform design
+- Remote state management
+- Secure infrastructure with private subnets
+- Bastion access pattern
+- Automated server configuration
+- Service discovery using DNS
+
 ---
+
 
 # Future Enhancements
 
@@ -188,3 +255,8 @@ Planned additions may include:
 # License
 
 This project is licensed under the terms of the LICENSE file included in this repository.
+## Author
+
+Ramu Chelloju
+
+DevOps Engineer
