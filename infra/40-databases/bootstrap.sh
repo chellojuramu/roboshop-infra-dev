@@ -22,4 +22,4 @@ git pull
 
 # 5. Execute Playbook with Explicit Variables
 # Note: We use double quotes around variables to prevent shell splitting errors
-ansible-playbook -e "component=${component}" -e "environment=${environment}" roboshop.yaml
+ansible-playbook -e component=$component -e environment=$environment roboshop.yaml
