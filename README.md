@@ -100,31 +100,203 @@ Features:
 * Secure entry point into private subnets
 * Infrastructure management from inside the VPC
 
-## 40-databases
+# 40-databases
+
 Creates the database infrastructure.
 
-Resources:
+**Resources:**
+* MongoDB EC2 instance
+* Redis EC2 instance
+* MySQL EC2 instance
+* RabbitMQ EC2 instance
 
-- MongoDB EC2 instance
-- Redis EC2 instance
+**Features:**
+* Instances launched in database subnets
+* Security groups applied dynamically using `for_each`
+* Route53 DNS records automatically created
+* Instance configuration handled using Terraform `terraform_data`
+* Ansible used for service configuration
+* IAM Role attached to MySQL instance for secure secret retrieval
 
-Features:
+**Configuration flow:**
+```
+Terraform
+   │
+   ▼
+Create Database EC2 Instances
+   │
+   ▼
+Copy bootstrap.sh
+   │
+   ▼
+Install Ansible
+   │
+   ▼
+Run Ansible Playbooks
+   │
+   ▼
+Configure Databases
+```
 
-- Instances launched in database subnets
-- Security groups applied
-- Terraform `terraform_data` resource used for instance configuration
-- Provisioners used to bootstrap instances
+## Secure Secret Management (SSM + IAM)
 
-Configuration flow:
+Sensitive data such as database passwords are not stored in Terraform code or Git repositories.
 
-1. Terraform creates EC2 instance
-2. `bootstrap.sh` script copied to instance
-3. Ansible installed
-4. Ansible playbooks executed to configure services
+Instead, secrets are stored in AWS Systems Manager Parameter Store.
 
+**Example parameter:**
+```
+/roboshop/dev/mysql_root_password
+```
 
-This instance acts as a **secure entry point** for administrative access to private resources.
+**Security architecture:**
+```
+SSM Parameter Store
+        │
+        ▼
+IAM Role attached to MySQL EC2
+        │
+        ▼
+Ansible boto3 lookup
+        │
+        ▼
+Retrieve secret securely
+        │
+        ▼
+Configure MySQL root password
+```
 
+This approach follows production-grade secret management practices.
+
+## IAM Role for Database Access
+
+MySQL EC2 instances are assigned an IAM Role via Instance Profile.
+
+**Purpose:**
+* Allow EC2 instances to securely access SSM Parameter Store
+* Avoid storing AWS credentials inside servers
+* Enable temporary credential usage via IAM
+
+**Terraform resources used:**
+```
+aws_iam_role
+aws_iam_policy
+aws_iam_role_policy_attachment
+aws_iam_instance_profile
+```
+
+This enables secure AWS API access from EC2 instances.
+
+## Ansible-Based Service Configuration
+
+Database services are configured using Ansible roles executed during bootstrap.
+
+**Bootstrap process:**
+```
+bootstrap.sh
+      │
+      ▼
+Install Ansible
+      │
+      ▼
+Clone Ansible roles repository
+      │
+      ▼
+Run playbook with component variable
+```
+
+**Example command executed by Terraform:**
+```
+sudo sh /tmp/bootstrap.sh mysql dev
+```
+
+Ansible then configures the required service.
+
+## Route53 Service Discovery
+
+Each database instance automatically registers a DNS record.
+
+**Example:**
+```
+mongodb-dev.servicewiz.in
+redis-dev.servicewiz.in
+mysql-dev.servicewiz.in
+rabbitmq-dev.servicewiz.in
+```
+
+This enables services to communicate using DNS instead of IP addresses.
+
+**Example connection test:**
+```
+mysql -h mysql-dev.servicewiz.in -u root -p
+```
+
+## Terraform Dynamic Infrastructure
+
+Database instances are created using Terraform `for_each` loops.
+
+**Example pattern:**
+```
+for_each = local.databases
+```
+
+**Benefits:**
+* Reduces duplicate code
+* Simplifies infrastructure expansion
+* Allows centralized configuration of multiple services
+
+**Example database map:**
+```
+mongodb
+redis
+mysql
+rabbitmq
+```
+
+## Configuration Automation Flow
+
+Complete automation flow implemented:
+```
+Terraform Apply
+      │
+      ▼
+Create Infrastructure
+      │
+      ▼
+Attach IAM Roles
+      │
+      ▼
+Launch Database Instances
+      │
+      ▼
+Bootstrap Script Execution
+      │
+      ▼
+Install Ansible
+      │
+      ▼
+Ansible Fetches Secrets from SSM
+      │
+      ▼
+Configure Database Services
+      │
+      ▼
+Create Route53 DNS Records
+```
+
+## Key DevOps Concepts Implemented
+
+* Infrastructure as Code (Terraform)
+* Modular infrastructure design
+* Security group based microservice communication
+* Bastion host access pattern
+* Terraform dynamic resource creation (`for_each`)
+* Terraform `terraform_data` bootstrap pattern
+* IAM Role based secure AWS access
+* Secret management using AWS SSM Parameter Store
+* Ansible configuration management
+* DNS based service discovery using Route53
+* Secure database password provisioning
 ---
 
 # Terraform Modules
