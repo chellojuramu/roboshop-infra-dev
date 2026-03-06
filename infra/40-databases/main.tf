@@ -37,7 +37,7 @@ resource "terraform_data" "bootstrap" {
   provisioner "remote-exec" {
     inline = [
       "chmod +x /tmp/bootstrap.sh",
-      "sudo sh /tmp/bootstrap.sh ${each.key} ${var.environment}"
+      "sudo sh /tmp/bootstrap.sh ${each.key}"
     ]
   }
 }
