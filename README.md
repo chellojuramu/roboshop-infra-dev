@@ -670,11 +670,12 @@ This repository is designed to grow into a **complete production-style DevOps in
 
 | Enhancement | Status |
 |---|---|
-| Application EC2 Instances | 🔜 Planned |
-| Target Groups | 🔜 Planned |
-| Listener Rules (Host-based routing) | 🔜 Planned |
-| Launch Templates | 🔜 Planned |
-| Auto Scaling Groups | 🔜 Planned |
+| Application EC2 Instances | ✅ Completed (Catalogue) |
+| Target Groups | ✅ Completed (Catalogue) |
+| Listener Rules (Host-based routing) | ✅ Completed (Catalogue) |
+| Launch Templates | ✅ Completed (Catalogue) |
+| Auto Scaling Groups | ✅ Completed (Catalogue) |
+| Remaining Microservices (User, Cart, Shipping, Payment) | 🔜 Planned |
 | Frontend ALB | 🔜 Planned |
 | Kubernetes (EKS) | 🔜 Planned |
 | CI/CD Pipelines (Jenkins/GitHub Actions) | 🔜 Planned |
