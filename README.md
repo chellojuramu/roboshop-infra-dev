@@ -23,6 +23,7 @@ The goal of this project is to build a **production-style DevOps infrastructure 
   - [30-bastion](#30-bastion)
   - [40-databases](#40-databases)
   - [50-backend-alb](#50-backend-alb)
+  - [60-catalogue](#60-catalogue)
 - [Terraform Modules](#-terraform-modules)
 - [SSM Parameter Store Integration](#-ssm-parameter-store-integration)
 - [Secure Secret Management](#-secure-secret-management-ssm--iam)
@@ -50,6 +51,7 @@ roboshop-infra-dev
 │   ├── 30-bastion
 │   ├── 40-databases
 │   └── 50-backend-alb
+│   └── 60-catalogue 
 │
 ├── modules
 │   ├── terraform-aws-vpc
@@ -377,7 +379,56 @@ Listener Rules (Host-based routing)
       ▼
 Healthy Backend Instances
 ```
+---
 
+### 60-catalogue
+
+Deploys the **Catalogue microservice** using the Golden AMI pattern with Auto Scaling.
+
+This layer implements the complete microservice deployment pipeline: build image → create AMI → launch template → auto scaling → register behind ALB.
+
+**Resources Created:**
+
+| Resource | Purpose |
+|---|---|
+| EC2 Instance (temporary) | Bootstrap and install application |
+| AMI | Golden Image with pre-installed application |
+| Launch Template | Blueprint for Auto Scaling instances |
+| Target Group | Backend instances registered behind ALB |
+| Auto Scaling Group | Manages instance count and scaling |
+| Listener Rule | Routes `catalogue.backend-alb-dev.*` to target group |
+
+**Deployment Pipeline:**
+
+```
+Terraform Apply
+      │
+      ▼
+Create temporary EC2 → Run bootstrap.sh
+      │
+      ▼
+Create Golden AMI (OS + App + Dependencies)
+      │
+      ▼
+Create Launch Template (references AMI)
+      │
+      ▼
+Create Target Group (port 8080, health check: /health)
+      │
+      ▼
+Auto Scaling Group launches instances
+      │
+      ▼
+ALB Listener Rule routes catalogue.backend-alb-dev.* → Target Group
+```
+
+**Key Patterns Used:**
+
+- **Golden AMI** — Application pre-baked into machine image for fast, consistent deployments
+- **Immutable Infrastructure** — Servers are replaced, never patched
+- **Health Checks** — ALB verifies `/health` on port 8080 before sending traffic
+- **terraform_data** — Provisioners for bootstrap script execution
+- **depends_on** — Ensures AMI is created only after bootstrap completes
 ---
 
 ## 📦 Terraform Modules
@@ -542,6 +593,7 @@ Step 3 → 20-sg-rules      (Security Group Rules)
 Step 4 → 30-bastion       (Bastion Host)
 Step 5 → 40-databases     (MongoDB, Redis, MySQL, RabbitMQ)
 Step 6 → 50-backend-alb   (Internal Load Balancer)
+Step 7 → 60-catalogue     (Catalogue Microservice + AMI + Auto Scaling)
 ```
 
 **Execution Flow:**
@@ -566,6 +618,9 @@ Create Database Instances + Ansible Config
       │
       ▼
 Create Backend ALB + Listener + DNS
+      │
+      ▼
+Create Catalogue Service (AMI → Launch Template → ASG → ALB)
 ```
 
 **Terraform Commands:**
