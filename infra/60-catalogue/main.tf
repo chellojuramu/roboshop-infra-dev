@@ -16,21 +16,26 @@ resource "terraform_data" "catalogue" {
   triggers_replace = [
   aws_instance.catalogue.id
   ]
-  type = "ssh"
-  user = "ec2-user"
-  password = local.ssh_password
-  host = aws_instance.catalogue.private_ip
+  connection {
+    type     = "ssh"
+    user     = "ec2-user"
+    password = local.ssh_password
+    host     = aws_instance.catalogue.private_ip
+  }
+
+  provisioner "file" {
+    source      = "bootstrap.sh"
+    destination = "/tmp/bootstrap.sh"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "chmod +x /tmp/bootstrap.sh",
+      "sudo sh /tmp/bootstrap.sh catalogue ${var.environment}"
+    ]
+  }
 }
-provisioner "file" {
-  source = "bootstrap.sh"
-  destination = "/tmp/bootstrap.sh"
-}
-provisioner "remote-exec" {
-  inline = [
-    "chmod +x /tmp/bootstrap.sh",
-    "sudo sh /tmp/bootstrap.sh catalogue ${var.environment}"
-  ]
-}
+
 resource "aws_ec2_instance_state" "catalogue" {
   instance_id = aws_instance.catalogue.id
   state       = "stopped"
