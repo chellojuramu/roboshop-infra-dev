@@ -28,3 +28,6 @@ data "aws_ssm_parameter" "private_subnet_ids" {
 data "aws_ssm_parameter" "ssh_password" {
   name = "/${var.project}/${var.environment}/ssh_password"
 }
+data "aws_ssm_parameter" "backend_alb_listener_arn" {
+  name = "/${var.project}/${var.environment}/backend_alb_listener_arn"
+}

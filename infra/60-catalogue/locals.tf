@@ -4,6 +4,7 @@ locals {
   ami_id = data.aws_ami.ramuchelloju.id
   ssh_password = data.aws_ssm_parameter.ssh_password.value
   private_subnet_id = split(",", data.aws_ssm_parameter.private_subnet_ids.value)[0]
+  backend_alb_listener_arn = data.aws_ssm_parameter.backend_alb_listener_arn.value
   common_tags = {
     Project     = var.project
     Environment = var.environment

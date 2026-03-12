@@ -13,3 +13,6 @@ variable "zone_id" {
 variable "domain_name" {
   default = "servicewiz.in"
 }
+variable "app_version" {
+  default = "v3"
+}

@@ -2,6 +2,7 @@
 
 component=$1
 env=$2
+app_version=$3
 
 dnf install ansible -y
 
@@ -11,4 +12,4 @@ git clone https://github.com/chellojuramu/ansible-roboshop-roles-tf
 cd ansible-roboshop-roles-tf
 git pull
 
-ansible-playbook -e "component=$component" -e "env=$env" roboshop.yaml
+ansible-playbook -e "component=$component" -e "env=$env" -e "app_version=$app_version" roboshop.yaml
