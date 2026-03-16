@@ -80,6 +80,7 @@ resource "aws_lb_target_group" "catalogue" {
 resource "aws_launch_template" "catalogue" {
   name                                 = "${var.project}-${var.environment}-catalogue"
   image_id                             = aws_ami_from_instance.catalogue.id
+  #once autoscaling sees less traffic it will terminate the instances
   instance_initiated_shutdown_behavior = "terminate"
   instance_type                        = "t3.micro"
   vpc_security_group_ids               = [local.catalogue_sg_id]
