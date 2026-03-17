@@ -1,715 +1,306 @@
-# 🚀 Roboshop Infrastructure — DevOps on AWS
+# 🚀 RoboShop Infrastructure — AWS DevOps
 
 [![Terraform](https://img.shields.io/badge/Terraform-7B42BC?style=for-the-badge&logo=terraform&logoColor=white)](https://www.terraform.io/)
 [![AWS](https://img.shields.io/badge/AWS-232F3E?style=for-the-badge&logo=amazon-aws&logoColor=white)](https://aws.amazon.com/)
 [![Ansible](https://img.shields.io/badge/Ansible-EE0000?style=for-the-badge&logo=ansible&logoColor=white)](https://www.ansible.com/)
 
-Infrastructure as Code (IaC) repository for provisioning the **Roboshop application infrastructure** using **Terraform and AWS**.
-
-This repository follows a **modular and layered infrastructure design**, allowing components to be created, managed, and extended independently.
-
-The goal of this project is to build a **production-style DevOps infrastructure architecture** that can evolve over time with additional services such as compute layers, load balancers, Kubernetes clusters, CI/CD pipelines, monitoring, and more.
+Production-grade e-commerce infrastructure using **Terraform** and **AWS**. Implements microservices architecture with automated deployments, high availability, and security best practices.
 
 ---
 
 ## 📑 Table of Contents
 
-- [Project Architecture](#-project-architecture)
-- [Complete System Architecture](#-complete-system-architecture)
+- [Architecture Overview](#-architecture-overview)
 - [Infrastructure Layers](#-infrastructure-layers)
-  - [00-vpc](#00-vpc)
-  - [10-sg](#10-sg)
-  - [20-sg-rules](#20-sg-rules)
-  - [30-bastion](#30-bastion)
-  - [40-databases](#40-databases)
-  - [50-backend-alb](#50-backend-alb)
-  - [60-catalogue](#60-catalogue)
-- [Terraform Modules](#-terraform-modules)
-- [SSM Parameter Store Integration](#-ssm-parameter-store-integration)
-- [Secure Secret Management](#-secure-secret-management-ssm--iam)
-- [Wildcard DNS Routing](#-wildcard-dns-routing)
-- [Deployment Workflow](#-deployment-workflow)
-- [Key DevOps Concepts Implemented](#-key-devops-concepts-implemented)
-- [FAANG Interview Reference](#-faang-interview-reference)
-- [Future Enhancements](#-future-enhancements)
-- [Technologies Used](#-technologies-used)
-- [Author](#-author)
+- [Key Features](#-key-features)
+- [Deployment Guide](#-deployment-guide)
+- [Technologies](#-technologies)
 
 ---
 
-## 📁 Project Architecture
-
-This repository is organized into **two main sections**:
-
+## 🏗️ Architecture Overview
 ```
-roboshop-infra-dev
-│
-├── infra
-│   ├── 00-vpc
-│   ├── 10-sg
-│   ├── 20-sg-rules
-│   ├── 30-bastion
-│   ├── 40-databases
-│   └── 50-backend-alb
-│   └── 60-catalogue 
-│
-├── modules
-│   ├── terraform-aws-vpc
-│   └── terraform-aws-sg
+Internet
+    │
+    ▼
+Frontend ALB (Public) → Frontend Service
+    │
+    ▼
+Backend ALB (Internal)
+    │
+    ├── Catalogue → MongoDB
+    ├── User      → MongoDB, Redis
+    ├── Cart      → Redis
+    ├── Shipping  → MySQL
+    └── Payment   → RabbitMQ
 ```
 
----
-
-## 🏗️ Complete System Architecture
-
-```
-                        ┌──────────────────────────────────────────────────────┐
-                        │                   INTERNET                           │
-                        └──────────────────────┬───────────────────────────────┘
-                                               │
-                                               ▼
-                        ┌──────────────────────────────────────────────────────┐
-                        │            Frontend ALB (Internet-Facing)            │
-                        │               Public Subnets                        │
-                        └──────────────────────┬───────────────────────────────┘
-                                               │
-                                               ▼
-                        ┌──────────────────────────────────────────────────────┐
-                        │            Backend ALB (Internal)                    │
-                        │               Private Subnets                       │
-                        │                                                      │
-                        │   Listener (HTTP :80)                                │
-                        │       │                                              │
-                        │       ├── catalogue.backend-alb → Catalogue TG       │
-                        │       ├── user.backend-alb      → User TG            │
-                        │       ├── cart.backend-alb      → Cart TG            │
-                        │       ├── shipping.backend-alb  → Shipping TG        │
-                        │       └── payment.backend-alb   → Payment TG         │
-                        └──────────────────────┬───────────────────────────────┘
-                                               │
-                                               ▼
-                        ┌──────────────────────────────────────────────────────┐
-                        │              Microservices Layer                      │
-                        │   (catalogue, user, cart, shipping, payment)          │
-                        │               Private Subnets                        │
-                        └──────────────────────┬───────────────────────────────┘
-                                               │
-                                               ▼
-                        ┌──────────────────────────────────────────────────────┐
-                        │              Database Layer                          │
-                        │   (MongoDB, Redis, MySQL, RabbitMQ)                  │
-                        │               Database Subnets (Isolated)            │
-                        └──────────────────────────────────────────────────────┘
-```
-
-**Key Design Decisions:**
-
-| Traffic Type | Load Balancer | Subnet Type | Purpose |
-|---|---|---|---|
-| Public (User) | Frontend ALB | Public | Serves user-facing traffic |
-| Internal (Service-to-Service) | Backend ALB | Private | Routes between microservices |
-| Database | None (Direct SG) | Database (Isolated) | No internet access |
-| Admin | Bastion Host | Public | Secure SSH into private resources |
+**Design Principles:**
+- Multi-tier architecture (Frontend → Backend → Database)
+- Service isolation via security groups
+- High availability across 2 AZs
+- Immutable infrastructure (Golden AMI pattern)
+- Zero-downtime deployments (Auto Scaling rolling updates)
 
 ---
 
 ## 🧱 Infrastructure Layers
 
-The infrastructure is created in **logical layers**, where each layer depends on the previous one.
-
----
-
 ### 00-vpc
-
-Creates the foundational networking components:
-
-- VPC
-- Public Subnets (2 AZs)
-- Private Subnets (2 AZs)
-- Database Subnets (2 AZs)
-- Internet Gateway
-- NAT Gateway
-- Route Tables
-
-Key outputs such as **VPC ID and Subnet IDs** are stored in **AWS Systems Manager Parameter Store** for use by other modules.
-
-**Network Layout:**
-
-```
-VPC (10.0.0.0/16)
-│
-├── Public Subnets     → Internet Gateway → Internet
-│   ├── AZ-1a
-│   └── AZ-1b
-│
-├── Private Subnets    → NAT Gateway → Internet (outbound only)
-│   ├── AZ-1a
-│   └── AZ-1b
-│
-└── Database Subnets   → No internet access (isolated)
-    ├── AZ-1a
-    └── AZ-1b
-```
-
----
+**Foundation networking**
+- VPC with 3 subnet tiers (Public, Private, Database)
+- Internet Gateway + NAT Gateway
+- Multi-AZ deployment (us-east-1a, us-east-1b)
 
 ### 10-sg
-
-Creates **security groups** for all application components.
-
-| Security Group | Purpose |
-|---|---|
-| `mongodb` | MongoDB database access |
-| `redis` | Redis cache access |
-| `mysql` | MySQL database access |
-| `rabbitmq` | RabbitMQ message broker access |
-| `catalogue` | Catalogue microservice |
-| `user` | User microservice |
-| `cart` | Cart microservice |
-| `shipping` | Shipping microservice |
-| `payment` | Payment microservice |
-| `backend_alb` | Backend Application Load Balancer |
-| `frontend` | Frontend application |
-| `frontend_alb` | Frontend Application Load Balancer |
-| `bastion` | Bastion host SSH access |
-
-Security group IDs are stored in **SSM Parameter Store** to enable cross-module usage.
-
----
+**Security groups** for all components
+- Separate SGs per service (13 total)
+- Principle of least privilege
+- IDs stored in SSM Parameter Store
 
 ### 20-sg-rules
-
-Defines the **network communication rules** between services.
-
-**Example Rules:**
-
-```
-Bastion ──(SSH:22)──────→ MongoDB
-Bastion ──(SSH:22)──────→ Redis
-Catalogue ──(27017)─────→ MongoDB
-User ──(27017)──────────→ MongoDB
-Cart ──(6379)───────────→ Redis
-Shipping ──(3306)───────→ MySQL
-Payment ──(5672)────────→ RabbitMQ
-Backend ALB ──(8080)────→ Catalogue
-Backend ALB ──(8080)────→ User
-Backend ALB ──(8080)────→ Cart
-Backend ALB ──(8080)────→ Shipping
-Backend ALB ──(8080)────→ Payment
-```
-
-> 💡 **Best Practice:** Security group rules reference **SG IDs instead of IP addresses**. This ensures rules remain valid even when instance IPs change (auto scaling, replacements).
-
----
+**Network communication rules**
+- Service-to-service communication
+- Database access control
+- Bastion SSH access
+- ALB traffic routing
 
 ### 30-bastion
-
-Creates a **Bastion Host EC2 instance** used to securely access private infrastructure resources.
-
-**Features:**
-
-- EC2 instance in public subnet
-- IAM role attached via instance profile
-- Security group restricting SSH access to a specific IP
-- Custom root volume configuration
-- Bootstrap script using provisioners
-- Secure entry point into private subnets
-- Infrastructure management from inside the VPC
-
-**Access Pattern:**
-
-```
-Developer ──(SSH)──→ Bastion Host (Public Subnet)
-                         │
-                         ├──(SSH)──→ Database Instances (DB Subnet)
-                         ├──(SSH)──→ Application Instances (Private Subnet)
-                         └──(HTTP)─→ Internal Services (Private Subnet)
-```
-
----
+**Secure access point**
+- Jump server in public subnet
+- Restricted SSH access via security group
+- IAM role for AWS CLI operations
 
 ### 40-databases
-
-Creates the database infrastructure.
-
-**Resources:**
-
-| Database | Type | Port | Subnet |
-|---|---|---|---|
-| MongoDB | Document DB | 27017 | Database |
-| Redis | Cache/In-Memory | 6379 | Database |
-| MySQL | Relational DB | 3306 | Database |
-| RabbitMQ | Message Broker | 5672 | Database |
-
-**Features:**
-
-- Instances launched in database subnets (isolated)
-- Security groups applied dynamically using `for_each`
-- Route53 DNS records automatically created
-- Instance configuration handled using Terraform `terraform_data`
-- Ansible used for service configuration
-- IAM Role attached to MySQL instance for secure secret retrieval
-
-**Configuration Flow:**
-
-```
-Terraform Apply
-      │
-      ▼
-Create Database EC2 Instances
-      │
-      ▼
-Copy bootstrap.sh via terraform_data
-      │
-      ▼
-Install Ansible
-      │
-      ▼
-Ansible Fetches Secrets from SSM
-      │
-      ▼
-Run Ansible Playbooks
-      │
-      ▼
-Configure Database Services
-      │
-      ▼
-Create Route53 DNS Records
-```
-
-**Route53 Service Discovery:**
-
-Each database instance automatically registers a DNS record:
-
-```
-mongodb-dev.servicewiz.in
-redis-dev.servicewiz.in
-mysql-dev.servicewiz.in
-rabbitmq-dev.servicewiz.in
-```
-
-This enables services to communicate using **DNS names instead of IP addresses**.
-
-**Terraform Dynamic Infrastructure:**
-
-Database instances are created using Terraform `for_each` loops:
-
-```hcl
-for_each = local.databases
-```
-
-Benefits: Reduces duplicate code, simplifies expansion, and centralizes configuration.
-
----
+**Data layer**
+- MongoDB (DocumentDB)
+- Redis (ElastiCache)
+- MySQL (RDS-ready, currently EC2)
+- RabbitMQ (Message broker)
+- Automated Ansible configuration
+- Route53 DNS service discovery
 
 ### 50-backend-alb
-
-Creates an **Internal Application Load Balancer (ALB)** used to route traffic between backend microservices.
-
-This load balancer acts as the **internal traffic router for all application services**.
-
-**Resources Created:**
-
-| Resource | Type | Purpose |
-|---|---|---|
-| `aws_lb` | Internal ALB | Load balances backend traffic |
-| `aws_lb_listener` | HTTP Listener (port 80) | Entry point for requests |
-| `aws_route53_record` | Wildcard DNS | Routes `*.backend-alb-dev` to ALB |
-
-**Terraform Example:**
-
-```hcl
-resource "aws_lb" "backend_alb" {
-  name               = "${var.project}-${var.environment}"
-  internal           = true
-  load_balancer_type = "application"
-  security_groups    = [local.backend_alb_sg_id]
-  subnets            = local.private_subnet_ids
-}
-```
-
-| Field | Value | Meaning |
-|---|---|---|
-| `internal` | `true` | Only accessible inside VPC |
-| `load_balancer_type` | `application` | Layer 7 (HTTP/HTTPS) load balancer |
-| `security_groups` | Retrieved from SSM | Controls access to ALB |
-| `subnets` | Private subnets | Deployed across multiple AZs |
-
-**Listener with Default Action:**
-
-```hcl
-resource "aws_lb_listener" "http" {
-  load_balancer_arn = aws_lb.backend_alb.arn
-  port              = "80"
-  protocol          = "HTTP"
-
-  default_action {
-    type = "fixed-response"
-    fixed_response {
-      content_type = "text/html"
-      message_body = "<h1>Hi, I am from HTTP Backend ALB</h1>"
-      status_code  = "200"
-    }
-  }
-}
-```
-
-> The default action handles requests that **don't match any routing rule**, preventing undefined behavior.
-
-**Traffic Flow:**
-
-```
-Frontend Service
-      │
-      ▼
-Backend ALB (Internal)
-      │
-      ▼
-Listener (HTTP :80)
-      │
-      ▼
-Listener Rules (Host-based routing)
-      │
-      ├── catalogue.backend-alb-dev.* → Catalogue Target Group
-      ├── user.backend-alb-dev.*      → User Target Group
-      ├── cart.backend-alb-dev.*      → Cart Target Group
-      ├── shipping.backend-alb-dev.*  → Shipping Target Group
-      └── payment.backend-alb-dev.*   → Payment Target Group
-      │
-      ▼
-Healthy Backend Instances
-```
----
+**Internal load balancer**
+- Application Load Balancer (Layer 7)
+- Host-based routing (`service.backend-alb-dev.domain`)
+- Health checks on `/health` endpoint
+- Wildcard DNS (`*.backend-alb-dev.domain`)
 
 ### 60-catalogue
+**First microservice deployment**
+- Golden AMI creation via Terraform provisioners
+- Launch Template with versioning
+- Auto Scaling Group (min: 1, max: 10)
+- Target Group with health checks
+- ALB Listener Rule (priority-based routing)
 
-Deploys the **Catalogue microservice** using the Golden AMI pattern with Auto Scaling.
+### 70-acm
+**SSL/TLS certificates**
+- AWS Certificate Manager integration
+- Wildcard certificate (`*.domain.com`)
+- Automatic validation via Route53
+- HTTPS termination at ALB
 
-This layer implements the complete microservice deployment pipeline: build image → create AMI → launch template → auto scaling → register behind ALB.
+### 80-frontend-alb
+**Public-facing load balancer**
+- Internet-facing ALB
+- HTTPS listener (port 443)
+- SSL certificate attachment
+- Routes to Frontend target group
 
-**Resources Created:**
-
-| Resource | Purpose |
-|---|---|
-| EC2 Instance (temporary) | Bootstrap and install application |
-| AMI | Golden Image with pre-installed application |
-| Launch Template | Blueprint for Auto Scaling instances |
-| Target Group | Backend instances registered behind ALB |
-| Auto Scaling Group | Manages instance count and scaling |
-| Listener Rule | Routes `catalogue.backend-alb-dev.*` to target group |
-
-**Deployment Pipeline:**
-
-```
-Terraform Apply
-      │
-      ▼
-Create temporary EC2 → Run bootstrap.sh
-      │
-      ▼
-Create Golden AMI (OS + App + Dependencies)
-      │
-      ▼
-Create Launch Template (references AMI)
-      │
-      ▼
-Create Target Group (port 8080, health check: /health)
-      │
-      ▼
-Auto Scaling Group launches instances
-      │
-      ▼
-ALB Listener Rule routes catalogue.backend-alb-dev.* → Target Group
-```
-
-**Key Patterns Used:**
-
-- **Golden AMI** — Application pre-baked into machine image for fast, consistent deployments
-- **Immutable Infrastructure** — Servers are replaced, never patched
-- **Health Checks** — ALB verifies `/health` on port 8080 before sending traffic
-- **terraform_data** — Provisioners for bootstrap script execution
-- **depends_on** — Ensures AMI is created only after bootstrap completes
----
-
-## 📦 Terraform Modules
-
-Reusable modules are stored under the **modules/** directory.
-
-### terraform-aws-vpc
-
-Reusable module for provisioning:
-
-- VPC
-- Subnets (Public, Private, Database)
-- Internet Gateway, NAT Gateway
-- Route Tables and Associations
-
-### terraform-aws-sg
-
-Reusable module for creating AWS Security Groups with configurable:
-
-- Ingress/Egress rules
-- Description and naming
-- Tag management
-
-> Using modules allows infrastructure to remain **consistent, reusable, and scalable**.
+### 90-components
+**Centralized microservice deployment**
+- Single module with `for_each` loop
+- Deploys all services from one folder
+- Shared bootstrap.sh with Ansible
+- Phased rollout strategy (commented services)
 
 ---
 
-## 🔗 SSM Parameter Store Integration
+## ✨ Key Features
 
-Infrastructure values created in earlier layers are stored in **AWS Systems Manager Parameter Store** and read by subsequent layers using **Terraform data sources**.
+### Infrastructure as Code
+- **Modular design**: Reusable VPC and SG modules
+- **Layer isolation**: Independent Terraform states
+- **SSM integration**: Cross-layer data sharing
 
-**Example Parameters:**
+### Security
+- **IAM roles**: No hardcoded credentials
+- **SSM SecureString**: Encrypted secrets (KMS)
+- **Security groups**: Reference-based rules (no IPs)
+- **Bastion pattern**: Secure private subnet access
 
+### High Availability
+- **Multi-AZ**: Resources across 2 availability zones
+- **Auto Scaling**: CPU-based scaling (target: 70%)
+- **Health checks**: ALB monitors `/health` endpoint
+- **Rolling updates**: Zero-downtime deployments (50% min healthy)
+
+### Automation
+- **Golden AMI**: Pre-baked application images
+- **Ansible integration**: Configuration management
+- **Bootstrap scripts**: Automated instance setup
+- **DNS automation**: Route53 service discovery
+
+---
+
+## 🚀 Deployment Guide
+
+**Prerequisites:**
+- AWS Account with appropriate permissions
+- Terraform >= 1.0
+- Configured AWS CLI (`aws configure`)
+
+**Deployment Order:**
+```bash
+# 1. Network foundation
+cd 00-vpc && terraform init && terraform apply
+
+# 2. Security groups
+cd ../10-sg && terraform init && terraform apply
+
+# 3. Security rules
+cd ../20-sg-rules && terraform init && terraform apply
+
+# 4. Bastion host
+cd ../30-bastion && terraform init && terraform apply
+
+# 5. Databases
+cd ../40-databases && terraform init && terraform apply
+
+# 6. Backend ALB
+cd ../50-backend-alb && terraform init && terraform apply
+
+# 7. SSL certificates
+cd ../70-acm && terraform init && terraform apply
+
+# 8. Frontend ALB
+cd ../80-frontend-alb && terraform init && terraform apply
+
+# 9. All microservices (optimized approach)
+cd ../90-components && terraform init && terraform apply
+```
+
+**Alternative (Individual Services):**
+```bash
+cd 60-catalogue && terraform apply
+cd 70-user && terraform apply
+# ... repeat for each service
+```
+
+---
+
+## 📦 Repository Structure
+```
+roboshop-infra-dev/
+├── infra/
+│   ├── 00-vpc/
+│   ├── 10-sg/
+│   ├── 20-sg-rules/
+│   ├── 30-bastion/
+│   ├── 40-databases/
+│   ├── 50-backend-alb/
+│   ├── 60-catalogue/
+│   ├── 70-acm/
+│   ├── 80-frontend-alb/
+│   └── 90-components/        ← Centralized deployment
+│
+└── modules/
+    ├── terraform-aws-vpc/
+    ├── terraform-aws-sg/
+    └── terraform-roboshop-component/
+```
+
+---
+
+## 🔐 SSM Parameter Store Pattern
+
+**Decoupled infrastructure layers:**
+```
+Layer A (00-vpc)          Layer B (50-backend-alb)
+     │                             │
+     ├─ Create VPC                 ├─ Read VPC ID
+     ├─ Create Subnets             ├─ Read Subnet IDs
+     │                             │
+     └─ Store in SSM ────SSM───────┘ Retrieve from SSM
+```
+
+**Example parameters:**
 ```
 /roboshop/dev/vpc_id
-/roboshop/dev/public_subnet_ids
 /roboshop/dev/private_subnet_ids
-/roboshop/dev/bastion_sg_id
-/roboshop/dev/backend_alb_sg_id
 /roboshop/dev/catalogue_sg_id
-```
-
-**How It Works:**
-
-```
-┌─────────────────────────┐          ┌─────────────────────────┐
-│   Terraform Layer A     │          │   Terraform Layer B     │
-│   (00-vpc)              │          │   (50-backend-alb)      │
-│                         │          │                         │
-│   Creates:              │          │   Reads:                │
-│   - VPC                 │──SSM───▶ │   - vpc_id              │
-│   - Subnets             │  Store   │   - private_subnet_ids  │
-│   - Security Groups     │          │   - backend_alb_sg_id   │
-└─────────────────────────┘          └─────────────────────────┘
-```
-
-**Terraform Usage:**
-
-```hcl
-# Data source reads existing parameter
-data "aws_ssm_parameter" "vpc_id" {
-  name = "/roboshop/dev/vpc_id"
-}
-
-# Local variable for cleaner code
-locals {
-  vpc_id = data.aws_ssm_parameter.vpc_id.value
-}
+/roboshop/dev/backend_alb_listener_arn
 ```
 
 **Benefits:**
-
-| Benefit | Explanation |
-|---|---|
-| **Loose coupling** | Layers don't depend on each other's state files |
-| **Independent deployments** | Change VPC without re-running ALB terraform |
-| **Team independence** | Different teams can own different layers |
-| **CI/CD friendly** | Each layer has its own pipeline |
-| **No state file sharing** | Avoids remote state data source complexity |
+- Independent deployments
+- No Terraform state dependencies
+- Team collaboration
+- CI/CD pipeline friendly
 
 ---
 
-## 🔐 Secure Secret Management (SSM + IAM)
-
-Sensitive data such as database passwords are **never** stored in Terraform code or Git repositories.
-
-**Security Architecture:**
-
-```
-SSM Parameter Store (SecureString)
-         │
-         ▼
-IAM Role attached to MySQL EC2
-         │
-         ▼
-Ansible boto3 lookup
-         │
-         ▼
-Retrieve secret securely
-         │
-         ▼
-Configure MySQL root password
-```
-
-**Example parameter:**
-
-```
-/roboshop/dev/mysql_root_password  (SecureString)
-```
-
-**IAM Resources Used:**
-
-```hcl
-aws_iam_role                    # Role for EC2
-aws_iam_policy                  # Policy allowing SSM access
-aws_iam_role_policy_attachment  # Attach policy to role
-aws_iam_instance_profile        # Attach role to EC2
-```
-
-**Why This Approach:**
-
-- ✅ No credentials stored on servers
-- ✅ Temporary credentials via IAM (auto-rotated)
-- ✅ Audit trail via CloudTrail
-- ✅ Encryption at rest via KMS
-- ✅ Fine-grained access control
-
----
-
-## 🌐 Wildcard DNS Routing
-
-Route53 wildcard DNS record enables dynamic routing for multiple backend services through a single ALB.
-
-**DNS Record:**
-
-```
-*.backend-alb-dev.servicewiz.in → Backend ALB (Alias Record)
-```
-
-**This Resolves:**
-
-```
-catalogue.backend-alb-dev.servicewiz.in  ──┐
-user.backend-alb-dev.servicewiz.in       ──┤
-cart.backend-alb-dev.servicewiz.in       ──┤──→  Same Backend ALB
-shipping.backend-alb-dev.servicewiz.in   ──┤
-payment.backend-alb-dev.servicewiz.in    ──┘
-```
-
-All traffic reaches the **Backend ALB**, where **listener rules** determine which target group (and therefore which microservice) receives the request.
-
----
-
-## 🚢 Deployment Workflow
-
-Infrastructure should be deployed **layer by layer** in the following order:
-
-```
-Step 1 → 00-vpc           (VPC, Subnets, Gateways)
-Step 2 → 10-sg            (Security Groups)
-Step 3 → 20-sg-rules      (Security Group Rules)
-Step 4 → 30-bastion       (Bastion Host)
-Step 5 → 40-databases     (MongoDB, Redis, MySQL, RabbitMQ)
-Step 6 → 50-backend-alb   (Internal Load Balancer)
-Step 7 → 60-catalogue     (Catalogue Microservice + AMI + Auto Scaling)
-```
-
-**Execution Flow:**
-
-```
-Terraform Apply
-      │
-      ▼
-Create VPC & Networking
-      │
-      ▼
-Create Security Groups
-      │
-      ▼
-Apply Security Group Rules
-      │
-      ▼
-Create Bastion Host
-      │
-      ▼
-Create Database Instances + Ansible Config
-      │
-      ▼
-Create Backend ALB + Listener + DNS
-      │
-      ▼
-Create Catalogue Service (AMI → Launch Template → ASG → ALB)
-```
-
-**Terraform Commands:**
-
-```bash
-# Initialize terraform (first time or after module changes)
-terraform init
-
-# Preview changes
-terraform plan
-
-# Apply changes
-terraform apply
-
-# If modules are updated
-terraform init -upgrade
-```
-
----
-
-## ✅ Key DevOps Concepts Implemented
-
-| Concept | Implementation |
-|---|---|
-| Infrastructure as Code | Terraform for all resource provisioning |
-| Modular Design | Reusable VPC and SG modules |
-| Layered Architecture | Numbered layers with clear dependencies |
-| Security Group Routing | SG references instead of IP addresses |
-| Bastion Host Pattern | Secure entry point to private resources |
-| Dynamic Resource Creation | Terraform `for_each` loops |
-| Bootstrap Automation | `terraform_data` + Ansible playbooks |
-| IAM Role-Based Access | No static credentials on servers |
-| Secret Management | SSM Parameter Store (SecureString) |
-| Configuration Management | Ansible roles for database setup |
-| DNS Service Discovery | Route53 records for all services |
-| Internal Load Balancing | Backend ALB for microservice routing |
-| Wildcard DNS Routing | Single DNS record for all backend services |
-| Infrastructure Decoupling | SSM Parameter Store between layers |
-| Immutable Infrastructure | Replace instances, don't patch |
-
----
----
-
-## 🔮 Future Enhancements
-
-This repository is designed to grow into a **complete production-style DevOps infrastructure**.
-
-| Enhancement | Status |
-|---|---|
-| Application EC2 Instances | ✅ Completed (Catalogue) |
-| Target Groups | ✅ Completed (Catalogue) |
-| Listener Rules (Host-based routing) | ✅ Completed (Catalogue) |
-| Launch Templates | ✅ Completed (Catalogue) |
-| Auto Scaling Groups | ✅ Completed (Catalogue) |
-| Remaining Microservices (User, Cart, Shipping, Payment) | 🔜 Planned |
-| Frontend ALB | 🔜 Planned |
-| Kubernetes (EKS) | 🔜 Planned |
-| CI/CD Pipelines (Jenkins/GitHub Actions) | 🔜 Planned |
-| Monitoring & Logging (CloudWatch/Prometheus) | 🔜 Planned |
-| WAF & DDoS Protection | 🔜 Planned |
-| Cost Optimization (Spot Instances, Reserved) | 🔜 Planned |
-
----
-
-## 🛠️ Technologies Used
+## 🛠️ Technologies
 
 | Technology | Purpose |
-|---|---|
-| **Terraform** | Infrastructure provisioning (IaC) |
-| **AWS** | Cloud platform |
-| **Ansible** | Configuration management |
+|------------|---------|
+| **Terraform** | Infrastructure provisioning |
+| **AWS VPC** | Network isolation |
+| **Application Load Balancer** | Traffic distribution |
+| **Auto Scaling** | Dynamic capacity management |
 | **Route53** | DNS & service discovery |
-| **ALB** | Application load balancing |
-| **SSM Parameter Store** | Infrastructure value sharing & secrets |
-| **IAM** | Role-based access control |
-| **VPC** | Network isolation & security |
+| **SSM Parameter Store** | Configuration & secrets |
+| **IAM** | Access control |
+| **Ansible** | Configuration management |
+| **ACM** | SSL/TLS certificates |
 
 ---
 
-## 📄 License
+## 🎯 DevOps Patterns Implemented
 
-This project is licensed under the terms of the LICENSE file included in this repository.
+- ✅ **Infrastructure as Code** (Terraform)
+- ✅ **Immutable Infrastructure** (Golden AMI)
+- ✅ **Zero-Downtime Deployments** (Rolling updates)
+- ✅ **Service Discovery** (Route53 DNS)
+- ✅ **Security Groups Over IPs** (Reference-based rules)
+- ✅ **Secrets Management** (SSM + IAM)
+- ✅ **Multi-Tier Architecture** (3-tier separation)
+- ✅ **High Availability** (Multi-AZ deployment)
+- ✅ **Auto Scaling** (CPU-based policies)
+- ✅ **Health Checks** (ALB monitoring)
+- ✅ **Modular Design** (Reusable modules)
+- ✅ **Configuration Management** (Ansible)
+
+---
+
+## 🔮 Roadmap
+
+- [x] VPC & Networking
+- [x] Security Groups
+- [x] Bastion Host
+- [x] Database Layer
+- [x] Backend ALB
+- [x] SSL Certificates
+- [x] Frontend ALB
+- [x] Microservices Deployment
+- [ ] CloudWatch Monitoring
+- [ ] CI/CD Pipeline (GitHub Actions)
+- [ ] EKS Migration
+- [ ] Cost Optimization
+- [ ] WAF Integration
 
 ---
 
 ## 👨‍💻 Author
 
-**Ramu Chelloju**
-DevOps Engineer
+**Ramu Chelloju**  
+DevOps Engineer | AWS | Terraform | Kubernetes
 
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/ramuchelloju/)
 [![GitHub](https://img.shields.io/badge/GitHub-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/chellojuramu)
+
+---
+
+⭐ **Star this repo** if you find it helpful!
