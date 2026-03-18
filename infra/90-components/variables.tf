@@ -22,6 +22,3 @@ variable "components" {
     }
   }
 }
-variable "app_version" {
-  type = string
-}
