@@ -23,7 +23,10 @@ Production-grade e-commerce infrastructure using **Terraform** and **AWS**. Impl
 Internet
     │
     ▼
-Frontend ALB (Public) → Frontend Service
+CloudFront (CDN)
+    │
+    ▼
+Frontend ALB (Public) → Frontend Service (Nginx)
     │
     ▼
 Backend ALB (Internal)
@@ -36,7 +39,8 @@ Backend ALB (Internal)
 ```
 
 **Design Principles:**
-- Multi-tier architecture (Frontend → Backend → Database)
+- Multi-tier architecture (CDN → Frontend → Backend → Database)
+- Global edge caching for static content
 - Service isolation via security groups
 - High availability across 2 AZs
 - Immutable infrastructure (Golden AMI pattern)
@@ -116,6 +120,24 @@ Backend ALB (Internal)
 - Shared bootstrap.sh with Ansible
 - Phased rollout strategy (commented services)
 
+### 95-cdn
+**Content Delivery Network (CloudFront)**
+- AWS CloudFront distribution in front of Frontend ALB
+- Global edge caching for static assets
+- Custom domain (`roboshop-dev.domain.com`)
+- Integrated with ACM SSL certificate
+- Path-based caching strategy:
+    - `/media/*` → Cached (optimized performance)
+    - `/images/*` → Cached
+    - `/api/*` → No caching (dynamic requests)
+- HTTPS enforced (`viewer_protocol_policy = https-only`)
+- Route53 alias → CloudFront distribution
+
+**Flow:**
+```
+User → CloudFront (CDN) → Frontend ALB → Nginx → Backend ALB → Microservices
+```
+
 ---
 
 ## ✨ Key Features
@@ -137,11 +159,38 @@ Backend ALB (Internal)
 - **Health checks**: ALB monitors `/health` endpoint
 - **Rolling updates**: Zero-downtime deployments (50% min healthy)
 
+### Performance Optimization
+- **CDN (CloudFront)**: Global edge caching
+- **Static content caching**: `/media/*`, `/images/*`
+- **Reduced latency**: Edge locations serve content
+- **Cache invalidation**: Supports deployment updates
+- **Separation of static vs dynamic traffic**
+
 ### Automation
 - **Golden AMI**: Pre-baked application images
 - **Ansible integration**: Configuration management
 - **Bootstrap scripts**: Automated instance setup
 - **DNS automation**: Route53 service discovery
+
+---
+
+## 🌍 Request Flow Deep Dive
+
+```
+Browser (HTTPS)
+   ↓
+CloudFront (Edge Location Cache)
+   ↓
+Frontend ALB (SSL Termination)
+   ↓
+Nginx (Reverse Proxy + Path Rewrite)
+   ↓
+Backend ALB (Host-Based Routing)
+   ↓
+Microservices (Auto Scaling)
+   ↓
+Databases (MongoDB / Redis / MySQL / RabbitMQ)
+```
 
 ---
 
@@ -180,6 +229,9 @@ cd ../80-frontend-alb && terraform init && terraform apply
 
 # 9. All microservices (optimized approach)
 cd ../90-components && terraform init && terraform apply
+
+# 10. CloudFront CDN
+cd ../95-cdn && terraform init && terraform apply
 ```
 
 **Alternative (Individual Services):**
@@ -204,7 +256,8 @@ roboshop-infra-dev/
 │   ├── 60-catalogue/
 │   ├── 70-acm/
 │   ├── 80-frontend-alb/
-│   └── 90-components/        ← Centralized deployment
+│   ├── 90-components/        ← Centralized deployment
+│   └── 95-cdn/               ← CloudFront CDN
 │
 └── modules/
     ├── terraform-aws-vpc/
@@ -250,6 +303,7 @@ Layer A (00-vpc)          Layer B (50-backend-alb)
 | **AWS VPC** | Network isolation |
 | **Application Load Balancer** | Traffic distribution |
 | **Auto Scaling** | Dynamic capacity management |
+| **CloudFront** | Global CDN & edge caching |
 | **Route53** | DNS & service discovery |
 | **SSM Parameter Store** | Configuration & secrets |
 | **IAM** | Access control |
@@ -266,12 +320,16 @@ Layer A (00-vpc)          Layer B (50-backend-alb)
 - ✅ **Service Discovery** (Route53 DNS)
 - ✅ **Security Groups Over IPs** (Reference-based rules)
 - ✅ **Secrets Management** (SSM + IAM)
-- ✅ **Multi-Tier Architecture** (3-tier separation)
+- ✅ **Multi-Tier Architecture** (4-tier separation)
 - ✅ **High Availability** (Multi-AZ deployment)
 - ✅ **Auto Scaling** (CPU-based policies)
 - ✅ **Health Checks** (ALB monitoring)
 - ✅ **Modular Design** (Reusable modules)
 - ✅ **Configuration Management** (Ansible)
+- ✅ **CDN Integration** (CloudFront Edge Caching)
+- ✅ **Path-Based Caching Strategy** (Static vs Dynamic)
+- ✅ **Global Content Delivery** (Low latency)
+- ✅ **Reverse Proxy Routing** (Nginx → Backend ALB)
 
 ---
 
@@ -285,6 +343,7 @@ Layer A (00-vpc)          Layer B (50-backend-alb)
 - [x] SSL Certificates
 - [x] Frontend ALB
 - [x] Microservices Deployment
+- [x] CloudFront CDN Integration
 - [ ] CloudWatch Monitoring
 - [ ] CI/CD Pipeline (GitHub Actions)
 - [ ] EKS Migration
