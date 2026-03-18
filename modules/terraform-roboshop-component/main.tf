@@ -5,14 +5,15 @@ resource "aws_instance" "main" {
   vpc_security_group_ids = [local.sg_id]
   tags = merge(
     {
-      Name = "${var.project}-${var.environment}-${var.component}"
+      name = "${var.project}-${var.environment}-${var.component}-${var.app_version}"
     },
     local.common_tags
   )
 }
 resource "terraform_data" "main" {
   triggers_replace = [
-  aws_instance.main.id
+    aws_instance.main.id,
+    var.app_version   # 🔥 THIS IS THE KEY FIX
   ]
   connection {
     type = "ssh"
@@ -44,6 +45,9 @@ resource "aws_ami_from_instance" "main" {
   depends_on = [
     aws_ec2_instance_state.main
     ]
+  lifecycle {
+    create_before_destroy = true   # 🔥 ZERO downtime safe
+  }
   tags = merge(
     {
       Name = "${var.project}-${var.environment}-${var.component}"
@@ -94,6 +98,9 @@ resource "aws_launch_template" "main" {
       },
       local.common_tags
     )
+  }
+  lifecycle {
+    create_before_destroy = true
   }
   tags = merge(
     {
